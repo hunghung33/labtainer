@@ -1,0 +1,89 @@
+from flask import Flask, request
+import requests
+from scapy.all import sniff, IP, ICMP
+import pyshark
+import threading
+
+class LabNetworkModule:
+    def __init__(self):
+        pass
+
+    @staticmethod
+    def start_flask_server():
+        """
+        Khởi chạy một server Flask đơn giản để xử lý các yêu cầu HTTP POST.
+        """
+        app = Flask(__name__)
+        
+        @app.route('/post', methods=['POST'])
+        def post_method():
+            return request.form.to_dict()
+        
+        @app.route('/')
+        def home():
+            return "Hello, World!"
+        
+        app.run(host='0.0.0.0', port=5000)
+    
+    @staticmethod
+    def send_http_post(url, data):
+        """
+        Gửi một yêu cầu HTTP POST đến server Flask.
+        :param url: Địa chỉ URL của server Flask.
+        :param data: Dữ liệu cần gửi (dictionary).
+        """
+        response = requests.post(url, data=data)
+        print(f"HTTP POST Status Code: {response.status_code}")
+        print(f"HTTP POST Response JSON: {response.json()}")
+
+    @staticmethod
+    def sniff_icmp_packets():
+        """
+        Lắng nghe các gói tin ICMP bằng Scapy.
+        """
+        def packet_callback(packet):
+            if packet.haslayer(ICMP):
+                print(f"Packet: {packet.summary()}")
+                print(f"Source IP: {packet[IP].src}")
+                print(f"Destination IP: {packet[IP].dst}")
+                print(f"ICMP Type: {packet[ICMP].type}")
+                print(f"ICMP Code: {packet[ICMP].code}")
+        
+        print("Bắt đầu lắng nghe gói tin ICMP...")
+        sniff(prn=packet_callback, filter="icmp", store=0)
+    
+    @staticmethod
+    def capture_http_traffic(interface='eth0', packet_count=10):
+        """
+        Bắt và phân tích gói tin HTTP bằng PyShark.
+        :param interface: Interface mạng cần bắt gói tin.
+        :param packet_count: Số lượng gói tin cần lắng nghe.
+        """
+        capture = pyshark.LiveCapture(interface=interface, display_filter='http')
+        print("Bắt đầu lắng nghe các gói tin HTTP...")
+        for packet in capture.sniff_continuously(packet_count=packet_count):
+            try:
+                print(f"HTTP Method: {packet.http.request_method}")
+                print(f"HTTP URL: {packet.http.request_uri}")
+                print(f"HTTP Host: {packet.http.host}")
+                print(f"HTTP User-Agent: {packet.http.user_agent}")
+                print("-" * 40)
+            except AttributeError:
+                pass
+
+# Kiểm tra nếu script được chạy độc lập
+if __name__ == "__main__":
+    # Chạy server Flask trong luồng riêng để không chặn tiến trình chính
+    flask_thread = threading.Thread(target=LabNetworkModule.start_flask_server, daemon=True)
+    flask_thread.start()
+    
+    # Chạy bắt gói tin ICMP
+    sniff_thread = threading.Thread(target=LabNetworkModule.sniff_icmp_packets, daemon=True)
+    sniff_thread.start()
+    
+    # Gửi một yêu cầu HTTP POST mẫu
+    sample_data = {'key1': 'value1', 'key2': 'value2'}
+    LabNetworkModule.send_http_post("http://127.0.0.1:5000/post", sample_data)
+    
+    # Bắt gói tin HTTP trên giao diện mạng 'eth0'
+    LabNetworkModule.capture_http_traffic(interface='eth0', packet_count=5)
